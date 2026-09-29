@@ -108,7 +108,7 @@ struct BridgeConfig {
             compactTriggerRatio: boundedDouble("COMPACT_TRIGGER_RATIO", 0.72, 0.30, 0.90),
             compactHardRatio: boundedDouble("COMPACT_HARD_RATIO", 0.85, 0.50, 0.98),
             compactTargetTokens: max(512, Int(string("COMPACT_TARGET_TOKENS", "2500")) ?? 2500),
-            recentHistoryEntries: max(2, min(40, Int(string("RECENT_HISTORY_ENTRIES", "12")) ?? 12)),
+            recentHistoryEntries: max(1, min(40, Int(string("RECENT_HISTORY_ENTRIES", "12")) ?? 12)),
             hardRecentHistoryEntries: max(1, min(12, Int(string("HARD_RECENT_HISTORY_ENTRIES", "4")) ?? 4)),
             sessionDirectory: URL(fileURLWithPath: sessionPath, isDirectory: true),
             sessionPersist: bool("SESSION_PERSIST", true),
