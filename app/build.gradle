@@ -1,0 +1,30 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.sakuralite.mate8'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.sakuralite.mate8'
+        minSdk 24
+        targetSdk 28
+        versionCode 7
+        versionName '0.3.4'
+    }
+
+    buildTypes {
+        debug {
+            minifyEnabled false
+        }
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
