@@ -48,7 +48,7 @@ final class ApiClient {
         conn.setUseCaches(false);
         conn.setRequestProperty("Content-Type", "image/jpeg");
         conn.setRequestProperty("Accept", "application/json");
-        conn.setRequestProperty("User-Agent", "SakuraMate8Lite/0.3.5");
+        conn.setRequestProperty("User-Agent", "SakuraMate8Lite/0.3.6");
         applyCommonHeaders(conn, secret, gameId, sessionId, sceneId, contextEnabled);
         conn.setRequestProperty("X-Auto-Mode", String.valueOf(autoMode));
         conn.setRequestProperty("X-Force-Retranslate", String.valueOf(forceRetranslate));
@@ -96,7 +96,7 @@ final class ApiClient {
         conn.setRequestMethod("GET");
         conn.setUseCaches(false);
         conn.setRequestProperty("Accept", "application/json");
-        conn.setRequestProperty("User-Agent", "SakuraMate8Lite/0.3.5");
+        conn.setRequestProperty("User-Agent", "SakuraMate8Lite/0.3.6");
         if (secret != null && !secret.isEmpty()) {
             conn.setRequestProperty("X-Bridge-Key", secret);
         }
