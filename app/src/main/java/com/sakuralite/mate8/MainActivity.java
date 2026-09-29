@@ -38,8 +38,6 @@ public class MainActivity extends Activity {
     private EditText bgAlpha;
     private CheckBox contextEnabled;
     private CheckBox showOcr;
-    private Button autoToggleButton;
-    private boolean autoTranslateEnabled;
     private CheckBox noWrap;
     private CheckBox chineseOnly;
     private TextView sessionView;
@@ -229,23 +227,6 @@ public class MainActivity extends Activity {
         startTitle.setPadding(0, dp(18), 0, dp(4));
         root.addView(startTitle);
 
-        autoTranslateEnabled = prefs.getBoolean("auto_translate", false);
-        autoToggleButton = new Button(this);
-        updateAutoToggleButton();
-        autoToggleButton.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) {
-                autoTranslateEnabled = !autoTranslateEnabled;
-                prefs.edit().putBoolean("auto_translate", autoTranslateEnabled).apply();
-                updateAutoToggleButton();
-                Toast.makeText(MainActivity.this,
-                        autoTranslateEnabled
-                                ? "自动翻译已开启：每 2 秒检查一次"
-                                : "自动翻译已关闭",
-                        Toast.LENGTH_SHORT).show();
-            }
-        });
-        root.addView(autoToggleButton, full());
-
         Button start = new Button(this);
         start.setText("启动悬浮翻译");
         start.setOnClickListener(new View.OnClickListener() {
@@ -271,7 +252,7 @@ public class MainActivity extends Activity {
         root.addView(status);
 
         root.addView(text(
-                "自动翻译模式每 2 秒先在手机本地做低功耗 dHash 检测；疑似变化时才做 32×12 灰度差分，并在约 250ms 后确认画面稳定。只有稳定且明显变化才抓取干净截图访问 Bridge。静止画面不会上传。",
+                "启动悬浮翻译后，点“自”开启/关闭自动翻译。开启后每 2 秒先在手机本地做低功耗 dHash 检测；疑似变化时才做 32×12 灰度差分，并在约 250ms 后确认稳定。静止画面不会上传。",
                 13, Color.GRAY));
 
         setContentView(scroll);
@@ -374,7 +355,6 @@ public class MainActivity extends Activity {
                 .putString("session_id", sessionId)
                 .putBoolean("context_enabled", contextEnabled.isChecked())
                 .putBoolean("show_ocr", showOcr.isChecked())
-                .putBoolean("auto_translate", autoTranslateEnabled)
                 .putString("font_size", trimFloat(fs))
                 .putString("text_color", tc)
                 .putString("bg_color", bc)
@@ -449,18 +429,7 @@ public class MainActivity extends Activity {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(service);
             else startService(service);
 
-            setStatus(autoTranslateEnabled
-                    ? "已启动；自动模式每 2 秒检查 OCR 文本变化"
-                    : "已启动；“框”选 OCR 区域，“译”翻译，“重”强制重译");
-        }
-    }
-
-    private void updateAutoToggleButton() {
-        if (autoToggleButton == null) return;
-        if (autoTranslateEnabled) {
-            autoToggleButton.setText("自动翻译：开启（每 2 秒检查）");
-        } else {
-            autoToggleButton.setText("自动翻译：关闭");
+            setStatus("已启动；“译”翻译，“框”选区，“重”强制重译，“自”切换自动翻译");
         }
     }
 
