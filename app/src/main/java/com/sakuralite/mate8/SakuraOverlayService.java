@@ -48,13 +48,18 @@ public class SakuraOverlayService extends Service {
     private static final int AUTO_DHASH_ROWS = 9;
     private static final int AUTO_DHASH_BITS = (AUTO_DHASH_COLS - 1) * AUTO_DHASH_ROWS;
     private static final int AUTO_DHASH_WORDS = (AUTO_DHASH_BITS + 63) / 64;
-    private static final int AUTO_DHASH_UNCHANGED_BITS = 3;
+    private static final int AUTO_DHASH_UNCHANGED_BITS = 2;
     private static final int AUTO_MAD_COLS = 32;
     private static final int AUTO_MAD_ROWS = 12;
-    private static final int AUTO_MAD_PIXEL_DIFF = 20;
-    private static final float AUTO_MAD_CHANGED_RATIO = 0.03f;
-    private static final float AUTO_MAD_AVERAGE_DIFF = 6.0f;
+    private static final int AUTO_MAD_PIXEL_DIFF = 18;
+    private static final float AUTO_MAD_CHANGED_RATIO = 0.025f;
+    private static final float AUTO_MAD_AVERAGE_DIFF = 5.0f;
     private static final long AUTO_STABILITY_DELAY_MS = 250L;
+    private static final int AUTO_STABILITY_MAX_ATTEMPTS = 6;
+    private static final long AUTO_DEEP_CHECK_INTERVAL_MS = 6000L;
+    private static final long AUTO_RECOVERY_RECHECK_MS = 450L;
+    private static final long AUTO_UNSTABLE_FALLBACK_INTERVAL_MS = 5000L;
+    private static final int AUTO_NO_FRAME_RECOVERY_CYCLES = 12;
     private static final long AUTO_FAILURE_BACKOFF_MS = 10000L;
 
     private WindowManager wm;
@@ -90,7 +95,7 @@ public class SakuraOverlayService extends Service {
     private float fallbackCropRatio = 0.55f;
     private volatile boolean busy;
 
-    private boolean autoTranslateEnabled;
+    private volatile boolean autoTranslateEnabled;
     private boolean pendingAutoMode;
     private boolean pendingForceRetranslate;
     private int oldTranslateVisibility;
@@ -103,6 +108,9 @@ public class SakuraOverlayService extends Service {
     private AutoSignature lastAutoSignature;
     private AutoSignature pendingAutoSignature;
     private long autoBackoffUntil;
+    private long lastAutoDeepCheckAt;
+    private long lastUnstableFallbackAt;
+    private int autoNoFrameCycles;
     private String lastDisplayedText = "";
     private String lastSuccessfulTranslation = "";
     private boolean lastDisplayedWasTranslation;
@@ -268,6 +276,9 @@ public class SakuraOverlayService extends Service {
                 autoTranslateEnabled = !autoTranslateEnabled;
                 pendingAutoSignature = null;
                 autoBackoffUntil = 0L;
+                lastAutoDeepCheckAt = 0L;
+                lastUnstableFallbackAt = 0L;
+                autoNoFrameCycles = 0;
                 if (autoTranslateEnabled) {
                     // Start from a fresh baseline so enabling "自" immediately
                     // evaluates the current dialogue instead of inheriting old state.
@@ -528,6 +539,8 @@ public class SakuraOverlayService extends Service {
         captureDensity = density;
         lastAutoSignature = null;
         pendingAutoSignature = null;
+        lastAutoDeepCheckAt = 0L;
+        autoNoFrameCycles = 0;
 
         reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3);
         display = projection.createVirtualDisplay(
@@ -608,12 +621,28 @@ public class SakuraOverlayService extends Service {
                     }, 50L);
                     return;
                 }
-                throw new Exception("没有取得新画面");
+
+                // A static VirtualDisplay may legitimately have no fresh buffer.
+                // Do not treat that as a backend failure or enter the 10s network backoff.
+                main.post(new Runnable() {
+                    @Override public void run() {
+                        handleAutoNoFrame();
+                    }
+                });
+                return;
             }
 
-            // Level 1: dHash only. Static frames usually stop here after ~153 pixel reads.
+            autoNoFrameCycles = 0;
+
+            // Level 1: dHash only. Most static frames stop here.
             AutoSignature dhashOnly = dHashFromImage(image);
-            if (lastAutoSignature != null && !dHashChanged(lastAutoSignature, dhashOnly)) {
+            long now = System.currentTimeMillis();
+            boolean dHashSaysChanged = lastAutoSignature == null
+                    || dHashChanged(lastAutoSignature, dhashOnly);
+            boolean deepCheckDue = lastAutoSignature != null
+                    && now - lastAutoDeepCheckAt >= AUTO_DEEP_CHECK_INTERVAL_MS;
+
+            if (!dHashSaysChanged && !deepCheckDue) {
                 pendingAutoSignature = null;
                 main.post(new Runnable() {
                     @Override public void run() {
@@ -623,15 +652,17 @@ public class SakuraOverlayService extends Service {
                 return;
             }
 
-            // Level 2: only a suspicious dHash result pays for the 32x12 MAD sample.
+            // Level 2: MAD catches small subtitle changes that coarse dHash can miss.
             AutoSignature candidate = new AutoSignature(
                     dhashOnly.hashBits,
                     dhashOnly.hashValid,
                     madSampleFromImage(image));
+            lastAutoDeepCheckAt = now;
 
             if (lastAutoSignature != null && !madChanged(lastAutoSignature, candidate)) {
-                // Treat this as harmless visual noise and absorb the new local baseline.
-                lastAutoSignature = candidate;
+                // Important: do NOT move lastAutoSignature here. It represents the last
+                // successfully translated frame. Moving it on small noise causes baseline
+                // drift and can swallow a real subtitle change over time.
                 pendingAutoSignature = null;
                 main.post(new Runnable() {
                     @Override public void run() {
@@ -643,7 +674,7 @@ public class SakuraOverlayService extends Service {
 
             pendingAutoSignature = candidate;
 
-            // Level 3: a second phone-only frame must settle before any JPEG/network work.
+            // Level 3: follow rapid page turns locally until two nearby frames settle.
             capture.postDelayed(new Runnable() {
                 @Override public void run() {
                     captureAutoStabilityFrame(0);
@@ -652,8 +683,7 @@ public class SakuraOverlayService extends Service {
         } catch (final Exception e) {
             main.post(new Runnable() {
                 @Override public void run() {
-                    finishBusy();
-                    handleFailure("截图失败：" + safe(e), true);
+                    recoverAutoCapture("截图失败：" + safe(e));
                 }
             });
         } finally {
@@ -664,6 +694,16 @@ public class SakuraOverlayService extends Service {
     private void captureAutoStabilityFrame(final int attempt) {
         Image image = null;
         try {
+            if (!autoTranslateEnabled) {
+                pendingAutoSignature = null;
+                main.post(new Runnable() {
+                    @Override public void run() {
+                        finishBusy();
+                    }
+                });
+                return;
+            }
+
             if (reader == null) throw new Exception("截图设备未就绪");
             image = reader.acquireLatestImage();
             if (image == null) {
@@ -675,57 +715,148 @@ public class SakuraOverlayService extends Service {
                     }, 50L);
                     return;
                 }
-                throw new Exception("没有取得稳定画面");
-            }
 
-            AutoSignature second = buildAutoSignature(image);
-            if (pendingAutoSignature == null
-                    || dHashChanged(pendingAutoSignature, second)
-                    || madChanged(pendingAutoSignature, second)) {
-                // Still moving: animation/transition. Stay completely local this round.
+                // No fresh frame is an idle state, not a failure. End this cycle and
+                // re-check shortly so a new dialogue frame is picked up quickly.
                 pendingAutoSignature = null;
                 main.post(new Runnable() {
                     @Override public void run() {
+                        autoNoFrameCycles++;
                         finishBusy();
+                        scheduleAutoRecoveryCheck();
                     }
                 });
                 return;
             }
 
-            pendingAutoSignature = second;
+            autoNoFrameCycles = 0;
+            final AutoSignature second = buildAutoSignature(image);
+            boolean moving = pendingAutoSignature == null
+                    || dHashChanged(pendingAutoSignature, second)
+                    || madChanged(pendingAutoSignature, second);
 
-            // Stable meaningful change confirmed. Only now hide intersecting overlays,
-            // capture a clean frame, JPEG-encode it and allow it onto the LAN.
+            if (moving) {
+                // Sliding debounce: follow the newest local frame instead of abandoning
+                // the whole cycle after one 250ms mismatch.
+                pendingAutoSignature = second;
+
+                if (attempt < AUTO_STABILITY_MAX_ATTEMPTS) {
+                    capture.postDelayed(new Runnable() {
+                        @Override public void run() {
+                            captureAutoStabilityFrame(attempt + 1);
+                        }
+                    }, AUTO_STABILITY_DELAY_MS);
+                    return;
+                }
+
+                // Continuous animation may never become pixel-stable. Rate-limit one
+                // fallback clean capture so auto translation cannot deadlock forever.
+                final long now = System.currentTimeMillis();
+                if (now - lastUnstableFallbackAt >= AUTO_UNSTABLE_FALLBACK_INTERVAL_MS) {
+                    lastUnstableFallbackAt = now;
+                    main.post(new Runnable() {
+                        @Override public void run() {
+                            startAutoCleanCapture();
+                        }
+                    });
+                } else {
+                    pendingAutoSignature = null;
+                    main.post(new Runnable() {
+                        @Override public void run() {
+                            finishBusy();
+                            scheduleAutoRecoveryCheck();
+                        }
+                    });
+                }
+                return;
+            }
+
+            pendingAutoSignature = second;
             main.post(new Runnable() {
                 @Override public void run() {
-                    boolean hidden = hideAutoIntersections();
-                    long discardDelay = hidden ? 100L : 40L;
-                    long captureDelay = hidden ? 190L : 100L;
-
-                    capture.postDelayed(new Runnable() {
-                        @Override public void run() {
-                            discardFrame();
-                        }
-                    }, discardDelay);
-
-                    capture.postDelayed(new Runnable() {
-                        @Override public void run() {
-                            captureFrame(0);
-                        }
-                    }, captureDelay);
+                    startAutoCleanCapture();
                 }
             });
         } catch (final Exception e) {
             main.post(new Runnable() {
                 @Override public void run() {
-                    pendingAutoSignature = null;
-                    finishBusy();
-                    handleFailure("截图失败：" + safe(e), true);
+                    recoverAutoCapture("截图失败：" + safe(e));
                 }
             });
         } finally {
             if (image != null) image.close();
         }
+    }
+
+    private void startAutoCleanCapture() {
+        if (!autoTranslateEnabled) {
+            pendingAutoSignature = null;
+            finishBusy();
+            return;
+        }
+
+        boolean hidden = hideAutoIntersections();
+        long discardDelay = hidden ? 100L : 40L;
+        long captureDelay = hidden ? 190L : 100L;
+
+        capture.postDelayed(new Runnable() {
+            @Override public void run() {
+                discardFrame();
+            }
+        }, discardDelay);
+
+        capture.postDelayed(new Runnable() {
+            @Override public void run() {
+                captureFrame(0);
+            }
+        }, captureDelay);
+    }
+
+    private void handleAutoNoFrame() {
+        autoNoFrameCycles++;
+        pendingAutoSignature = null;
+        finishBusy();
+
+        if (!autoTranslateEnabled) return;
+
+        // If ImageReader has produced no frame for a long time, rebuild only the local
+        // VirtualDisplay. This is intentionally infrequent to keep idle power low.
+        if (autoNoFrameCycles >= AUTO_NO_FRAME_RECOVERY_CYCLES) {
+            autoNoFrameCycles = 0;
+            ensureCaptureSurface(true);
+            scheduleAutoRecoveryCheck();
+        }
+    }
+
+    private void recoverAutoCapture(String message) {
+        pendingAutoSignature = null;
+        finishBusy();
+        if (!autoTranslateEnabled) return;
+
+        // Capture-side problems are local and must not trigger the backend failure
+        // backoff. Rebuild the surface and retry locally.
+        ensureCaptureSurface(true);
+        scheduleAutoRecoveryCheck();
+
+        // Keep failure rendering for real capture exceptions, using the configured style.
+        if (message != null && !message.trim().isEmpty()) {
+            showResultText(formatFailureText(message));
+        }
+    }
+
+    private void scheduleAutoRecoveryCheck() {
+        if (main == null || !autoTranslateEnabled) return;
+        main.postDelayed(new Runnable() {
+            @Override public void run() {
+                if (autoTranslateEnabled
+                        && !busy
+                        && selectionView == null
+                        && projection != null
+                        && System.currentTimeMillis() >= autoBackoffUntil) {
+                    requestCapture(true, false);
+                }
+            }
+        }, AUTO_RECOVERY_RECHECK_MS);
     }
 
     private boolean hideEverythingForCapture() {
@@ -884,8 +1015,12 @@ public class SakuraOverlayService extends Service {
             main.post(new Runnable() {
                 @Override public void run() {
                     restoreAfterCapture();
-                    finishBusy();
-                    handleFailure("截图失败：" + safe(e), autoMode);
+                    if (autoMode) {
+                        recoverAutoCapture("截图失败：" + safe(e));
+                    } else {
+                        finishBusy();
+                        handleFailure("截图失败：" + safe(e), false);
+                    }
                 }
             });
         } finally {
@@ -1119,6 +1254,8 @@ public class SakuraOverlayService extends Service {
                     }
                     pendingAutoSignature = null;
                     autoBackoffUntil = 0L;
+                    autoNoFrameCycles = 0;
+                    lastAutoDeepCheckAt = System.currentTimeMillis();
                     finishBusy();
                     if (translated.changed) {
                         showResult(translated);
