@@ -863,8 +863,7 @@ public class SakuraOverlayService extends Service {
 
             final byte[] jpeg = toJpeg(image);
             final boolean forceRetranslate = pendingForceRetranslate;
-            final boolean trackAutoBaseline = autoMode
-                    || prefs.getBoolean("auto_translate", false);
+            final boolean trackAutoBaseline = autoMode || autoTranslateEnabled;
             final AutoSignature cleanSignature = trackAutoBaseline
                     ? buildAutoSignature(image)
                     : null;
