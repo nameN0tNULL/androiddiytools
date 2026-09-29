@@ -1,0 +1,53 @@
+name: Build Sakura Vision Bridge Phase B
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'bridge/**'
+      - '.github/workflows/build-bridge.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-e2e:
+    runs-on: macos-14
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Bridge
+        working-directory: bridge
+        run: |
+          chmod +x *.sh
+          ./build.sh
+
+      - name: Validate tools
+        working-directory: bridge
+        run: |
+          bash -n *.sh
+          python3 -m py_compile Tools/MockLlamaServer.py
+          xcrun --sdk macosx swiftc Tools/VisionOCRTest.swift             -o bin/vision-ocr-test             -framework Vision             -framework AppKit
+          xcrun --sdk macosx swiftc Tools/MakeTestImage.swift             -o bin/make-test-image             -framework AppKit
+
+      - name: Phase B E2E
+        working-directory: bridge
+        run: ./e2e-phase-b.sh
+
+      - name: Upload Bridge
+        uses: actions/upload-artifact@v4
+        with:
+          name: SakuraVisionBridge-PhaseB-macOS
+          path: |
+            bridge/bin/sakura-vision-bridge
+            bridge/bin/vision-ocr-test
+            bridge/Sources/SakuraVisionBridge.swift
+            bridge/Tools/**
+            bridge/.env.example
+            bridge/README.md
+            bridge/*.sh
+          retention-days: 30
