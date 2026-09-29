@@ -1,6 +1,7 @@
 package com.sakuralite.mate8;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -18,6 +19,7 @@ import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -172,11 +174,19 @@ public class MainActivity extends Activity {
         textColor.setText(prefs.getString("text_color", "#FFFFFF"));
         root.addView(textColor, full());
 
+        Button textColorPicker = colorPickerButton(
+                textColor, "字体颜色", Color.WHITE, "#FFFFFF");
+        root.addView(textColorPicker, full());
+
         root.addView(label("背景颜色（#RRGGBB）"));
         bgColor = new EditText(this);
         bgColor.setSingleLine(true);
         bgColor.setText(prefs.getString("bg_color", "#222222"));
         root.addView(bgColor, full());
+
+        Button bgColorPicker = colorPickerButton(
+                bgColor, "背景颜色", 0xFF222222, "#222222");
+        root.addView(bgColorPicker, full());
 
         root.addView(label("背景不透明度（0 - 100）"));
         bgAlpha = new EditText(this);
@@ -362,6 +372,155 @@ public class MainActivity extends Activity {
                 .putBoolean("no_wrap", noWrap.isChecked())
                 .putBoolean("chinese_only", chineseOnly.isChecked())
                 .apply();
+    }
+
+    private Button colorPickerButton(
+            final EditText target,
+            final String title,
+            final int fallbackColor,
+            final String fallbackText) {
+
+        final Button button = new Button(this);
+        int current = parseAndroidColor(
+                normalizeColor(target.getText().toString(), fallbackText),
+                fallbackColor);
+        updateColorPickerButton(button, title, current);
+
+        button.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                showColorPicker(title, target, button, fallbackColor, fallbackText);
+            }
+        });
+        return button;
+    }
+
+    private void showColorPicker(
+            final String title,
+            final EditText target,
+            final Button swatchButton,
+            final int fallbackColor,
+            final String fallbackText) {
+
+        int current = parseAndroidColor(
+                normalizeColor(target.getText().toString(), fallbackText),
+                fallbackColor);
+
+        final int[] rgb = new int[] {
+                Color.red(current),
+                Color.green(current),
+                Color.blue(current)
+        };
+
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(18), dp(12), dp(18), dp(8));
+
+        final TextView sample = new TextView(this);
+        sample.setTextSize(18);
+        sample.setGravity(android.view.Gravity.CENTER);
+        sample.setPadding(dp(12), dp(18), dp(12), dp(18));
+        panel.addView(sample, full());
+
+        final TextView hex = text("", 16, Color.DKGRAY);
+        hex.setGravity(android.view.Gravity.CENTER);
+        hex.setPadding(0, dp(8), 0, dp(8));
+        panel.addView(hex, full());
+
+        final TextView rLabel = text("", 14, Color.BLACK);
+        final SeekBar rBar = colorSeekBar(rgb[0]);
+        panel.addView(rLabel, full());
+        panel.addView(rBar, full());
+
+        final TextView gLabel = text("", 14, Color.BLACK);
+        final SeekBar gBar = colorSeekBar(rgb[1]);
+        panel.addView(gLabel, full());
+        panel.addView(gBar, full());
+
+        final TextView bLabel = text("", 14, Color.BLACK);
+        final SeekBar bBar = colorSeekBar(rgb[2]);
+        panel.addView(bLabel, full());
+        panel.addView(bBar, full());
+
+        final Runnable refresh = new Runnable() {
+            @Override public void run() {
+                int color = Color.rgb(rgb[0], rgb[1], rgb[2]);
+                String value = colorHex(color);
+                sample.setText(title + "预览\n" + value);
+                sample.setTextColor(contrastColor(color));
+                sample.setBackground(roundRect(color, dp(8)));
+                hex.setText(value);
+                rLabel.setText("R  " + rgb[0]);
+                gLabel.setText("G  " + rgb[1]);
+                bLabel.setText("B  " + rgb[2]);
+            }
+        };
+
+        rBar.setOnSeekBarChangeListener(colorSeekListener(rgb, 0, refresh));
+        gBar.setOnSeekBarChangeListener(colorSeekListener(rgb, 1, refresh));
+        bBar.setOnSeekBarChangeListener(colorSeekListener(rgb, 2, refresh));
+        refresh.run();
+
+        new AlertDialog.Builder(this)
+                .setTitle("选择" + title)
+                .setView(panel)
+                .setNegativeButton("取消", null)
+                .setPositiveButton("确定", (dialog, which) -> {
+                    int color = Color.rgb(rgb[0], rgb[1], rgb[2]);
+                    target.setText(colorHex(color));
+                    updateColorPickerButton(swatchButton, title, color);
+                    applyPreview();
+                })
+                .show();
+    }
+
+    private SeekBar colorSeekBar(int value) {
+        SeekBar bar = new SeekBar(this);
+        bar.setMax(255);
+        bar.setProgress(Math.max(0, Math.min(255, value)));
+        return bar;
+    }
+
+    private SeekBar.OnSeekBarChangeListener colorSeekListener(
+            final int[] rgb,
+            final int index,
+            final Runnable refresh) {
+
+        return new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                rgb[index] = progress;
+                refresh.run();
+            }
+
+            @Override public void onStartTrackingTouch(SeekBar seekBar) {}
+            @Override public void onStopTrackingTouch(SeekBar seekBar) {}
+        };
+    }
+
+    private void updateColorPickerButton(Button button, String title, int color) {
+        button.setText("取色：" + title + "  " + colorHex(color));
+        button.setTextColor(contrastColor(color));
+        button.setBackground(roundRect(color, dp(8)));
+    }
+
+    private int contrastColor(int color) {
+        int luminance = (Color.red(color) * 299
+                + Color.green(color) * 587
+                + Color.blue(color) * 114) / 1000;
+        return luminance >= 150 ? Color.BLACK : Color.WHITE;
+    }
+
+    private String colorHex(int color) {
+        return String.format("#%02X%02X%02X",
+                Color.red(color),
+                Color.green(color),
+                Color.blue(color));
+    }
+
+    private GradientDrawable roundRect(int color, int radius) {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(color);
+        d.setCornerRadius(radius);
+        return d;
     }
 
     private void applyPreview() {
