@@ -61,10 +61,12 @@ public class SakuraOverlayService extends Service {
     private TextView translateButton;
     private TextView selectButton;
     private TextView retryButton;
+    private TextView autoButton;
     private TextView resultView;
     private WindowManager.LayoutParams translateParams;
     private WindowManager.LayoutParams selectParams;
     private WindowManager.LayoutParams retryParams;
+    private WindowManager.LayoutParams autoParams;
     private WindowManager.LayoutParams resultParams;
 
     private SelectionOverlayView selectionView;
@@ -88,11 +90,13 @@ public class SakuraOverlayService extends Service {
     private float fallbackCropRatio = 0.55f;
     private volatile boolean busy;
 
+    private boolean autoTranslateEnabled;
     private boolean pendingAutoMode;
     private boolean pendingForceRetranslate;
     private int oldTranslateVisibility;
     private int oldSelectVisibility;
     private int oldRetryVisibility;
+    private int oldAutoVisibility;
     private int oldResultVisibility;
 
     // Automatic mode is gated locally. Unchanged frames never leave the phone.
@@ -130,7 +134,7 @@ public class SakuraOverlayService extends Service {
 
         autoRunnable = new Runnable() {
             @Override public void run() {
-                if (prefs.getBoolean("auto_translate", false)
+                if (autoTranslateEnabled
                         && !busy
                         && selectionView == null
                         && projection != null
@@ -180,7 +184,7 @@ public class SakuraOverlayService extends Service {
     }
 
     private Notification notification() {
-        String mode = prefs != null && prefs.getBoolean("auto_translate", false)
+        String mode = autoTranslateEnabled
                 ? "自动翻译运行中"
                 : "悬浮翻译运行中";
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -219,10 +223,14 @@ public class SakuraOverlayService extends Service {
         translateButton = smallButton("译");
         selectButton = smallButton("框");
         retryButton = smallButton("重");
+        autoButton = smallButton("自");
+        autoTranslateEnabled = false;
+        updateAutoButtonAppearance();
 
         translateParams = buttonParams(dp(12), dp(220));
         selectParams = buttonParams(dp(12), dp(282));
         retryParams = buttonParams(dp(12), dp(344));
+        autoParams = buttonParams(dp(12), dp(406));
 
         resultView = new TextView(this);
         resultView.setPadding(dp(14), dp(10), dp(14), dp(10));
@@ -252,6 +260,20 @@ public class SakuraOverlayService extends Service {
         retryButton.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 requestCapture(false, true);
+            }
+        });
+
+        autoButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                autoTranslateEnabled = !autoTranslateEnabled;
+                pendingAutoSignature = null;
+                autoBackoffUntil = 0L;
+                if (autoTranslateEnabled) {
+                    // Start from a fresh baseline so enabling "自" immediately
+                    // evaluates the current dialogue instead of inheriting old state.
+                    lastAutoSignature = null;
+                }
+                updateAutoButtonAppearance();
             }
         });
 
@@ -295,6 +317,7 @@ public class SakuraOverlayService extends Service {
             wm.addView(translateButton, translateParams);
             wm.addView(selectButton, selectParams);
             wm.addView(retryButton, retryParams);
+            wm.addView(autoButton, autoParams);
             wm.addView(resultView, resultParams);
             applyControlLayout();
             applyTranslationPosition();
@@ -315,6 +338,14 @@ public class SakuraOverlayService extends Service {
         return button;
     }
 
+    private void updateAutoButtonAppearance() {
+        if (autoButton == null) return;
+        int color = autoTranslateEnabled ? 0xDD2E7D32 : 0xDD222222;
+        autoButton.setBackground(roundRect(color, dp(20)));
+        autoButton.setText("自");
+        autoButton.setContentDescription(autoTranslateEnabled ? "自动翻译已开启" : "自动翻译已关闭");
+    }
+
     private WindowManager.LayoutParams buttonParams(int x, int y) {
         WindowManager.LayoutParams p = new WindowManager.LayoutParams(
                 dp(54), dp(54),
@@ -328,8 +359,10 @@ public class SakuraOverlayService extends Service {
     }
 
     private void applyControlLayout() {
-        if (wm == null || translateButton == null || selectButton == null || retryButton == null) return;
-        if (translateParams == null || selectParams == null || retryParams == null) return;
+        if (wm == null || translateButton == null || selectButton == null
+                || retryButton == null || autoButton == null) return;
+        if (translateParams == null || selectParams == null
+                || retryParams == null || autoParams == null) return;
 
         DisplayMetrics dm = currentMetrics();
 
@@ -339,23 +372,28 @@ public class SakuraOverlayService extends Service {
             translateParams.x = dp(12);
             selectParams.x = dp(74);
             retryParams.x = dp(136);
+            autoParams.x = dp(198);
             translateParams.y = y;
             selectParams.y = y;
             retryParams.y = y;
+            autoParams.y = y;
         } else {
             // 竖屏：保持右侧纵向排列。
             int x = dp(12);
             translateParams.x = x;
             selectParams.x = x;
             retryParams.x = x;
+            autoParams.x = x;
             translateParams.y = dp(220);
             selectParams.y = dp(282);
             retryParams.y = dp(344);
+            autoParams.y = dp(406);
         }
 
         try { wm.updateViewLayout(translateButton, translateParams); } catch (Exception ignored) {}
         try { wm.updateViewLayout(selectButton, selectParams); } catch (Exception ignored) {}
         try { wm.updateViewLayout(retryButton, retryParams); } catch (Exception ignored) {}
+        try { wm.updateViewLayout(autoButton, autoParams); } catch (Exception ignored) {}
     }
 
     private DisplayMetrics currentMetrics() {
@@ -439,12 +477,14 @@ public class SakuraOverlayService extends Service {
         if (translateButton != null) translateButton.setVisibility(View.VISIBLE);
         if (selectButton != null) selectButton.setVisibility(View.VISIBLE);
         if (retryButton != null) retryButton.setVisibility(View.VISIBLE);
+        if (autoButton != null) autoButton.setVisibility(View.VISIBLE);
     }
 
     private void hideAllOverlays() {
         if (translateButton != null) translateButton.setVisibility(View.INVISIBLE);
         if (selectButton != null) selectButton.setVisibility(View.INVISIBLE);
         if (retryButton != null) retryButton.setVisibility(View.INVISIBLE);
+        if (autoButton != null) autoButton.setVisibility(View.INVISIBLE);
         if (resultView != null) resultView.setVisibility(View.GONE);
     }
 
@@ -517,6 +557,7 @@ public class SakuraOverlayService extends Service {
         oldTranslateVisibility = translateButton == null ? View.GONE : translateButton.getVisibility();
         oldSelectVisibility = selectButton == null ? View.GONE : selectButton.getVisibility();
         oldRetryVisibility = retryButton == null ? View.GONE : retryButton.getVisibility();
+        oldAutoVisibility = autoButton == null ? View.GONE : autoButton.getVisibility();
         oldResultVisibility = resultView == null ? View.GONE : resultView.getVisibility();
 
         if (autoMode && !forceRetranslate) {
@@ -695,6 +736,9 @@ public class SakuraOverlayService extends Service {
         if (retryButton != null && retryButton.getVisibility() == View.VISIBLE) {
             retryButton.setVisibility(View.INVISIBLE); hidden = true;
         }
+        if (autoButton != null && autoButton.getVisibility() == View.VISIBLE) {
+            autoButton.setVisibility(View.INVISIBLE); hidden = true;
+        }
         if (resultView != null && resultView.getVisibility() == View.VISIBLE) {
             resultView.setVisibility(View.INVISIBLE); hidden = true;
         }
@@ -716,6 +760,10 @@ public class SakuraOverlayService extends Service {
         if (retryButton != null && retryButton.getVisibility() == View.VISIBLE
                 && Rect.intersects(crop, overlayRect(retryButton, retryParams))) {
             retryButton.setVisibility(View.INVISIBLE); hidden = true;
+        }
+        if (autoButton != null && autoButton.getVisibility() == View.VISIBLE
+                && Rect.intersects(crop, overlayRect(autoButton, autoParams))) {
+            autoButton.setVisibility(View.INVISIBLE); hidden = true;
         }
         if (resultView != null && resultView.getVisibility() == View.VISIBLE
                 && Rect.intersects(crop, overlayRect(resultView, resultParams))) {
@@ -764,6 +812,7 @@ public class SakuraOverlayService extends Service {
         if (translateButton != null) translateButton.setVisibility(oldTranslateVisibility);
         if (selectButton != null) selectButton.setVisibility(oldSelectVisibility);
         if (retryButton != null) retryButton.setVisibility(oldRetryVisibility);
+        if (autoButton != null) autoButton.setVisibility(oldAutoVisibility);
         if (resultView != null) resultView.setVisibility(oldResultVisibility);
 
         if (!pendingAutoMode && translateButton != null) {
@@ -798,8 +847,18 @@ public class SakuraOverlayService extends Service {
                 throw new Exception("没有取得新画面");
             }
 
-            final byte[] jpeg = toJpeg(image);
             final boolean autoMode = pendingAutoMode;
+            if (autoMode && !autoTranslateEnabled) {
+                main.post(new Runnable() {
+                    @Override public void run() {
+                        restoreAfterCapture();
+                        finishBusy();
+                    }
+                });
+                return;
+            }
+
+            final byte[] jpeg = toJpeg(image);
             final boolean forceRetranslate = pendingForceRetranslate;
             final boolean trackAutoBaseline = autoMode
                     || prefs.getBoolean("auto_translate", false);
@@ -907,11 +966,12 @@ public class SakuraOverlayService extends Service {
     }
 
     private Rect[] visibleOverlayRects() {
-        Rect[] masks = new Rect[4];
+        Rect[] masks = new Rect[5];
         masks[0] = visibleOverlayRect(translateButton, translateParams);
         masks[1] = visibleOverlayRect(selectButton, selectParams);
         masks[2] = visibleOverlayRect(retryButton, retryParams);
-        masks[3] = visibleOverlayRect(resultView, resultParams);
+        masks[3] = visibleOverlayRect(autoButton, autoParams);
+        masks[4] = visibleOverlayRect(resultView, resultParams);
         return masks;
     }
 
@@ -1351,6 +1411,7 @@ public class SakuraOverlayService extends Service {
             try { if (translateButton != null) wm.removeView(translateButton); } catch (Exception ignored) {}
             try { if (selectButton != null) wm.removeView(selectButton); } catch (Exception ignored) {}
             try { if (retryButton != null) wm.removeView(retryButton); } catch (Exception ignored) {}
+            try { if (autoButton != null) wm.removeView(autoButton); } catch (Exception ignored) {}
             try { if (resultView != null) wm.removeView(resultView); } catch (Exception ignored) {}
         }
 
