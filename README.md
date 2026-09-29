@@ -1,10 +1,10 @@
 # androiddiytools — Sakura Mate8 Lite
 
-Current app version: **0.3.6**
+Current app version: **0.3.7**
 
 This repository builds the Android 7 compatible Sakura Mate8 Lite floating translator client.
 
-## v0.3.6
+## v0.3.7
 
 - Huawei Mate 8 / Android 7 compatible.
 - No Google Play Services or AndroidX dependency.
@@ -23,6 +23,8 @@ This repository builds the Android 7 compatible Sakura Mate8 Lite floating trans
 - Identical Chinese translation does not refresh the overlay.
 - Failures/timeouts use the same styled translation overlay.
 - Automatic backend failures use a local backoff.
+- Auto translation self-recovers after long idle periods and rapid page turns; idle no-frame states no longer trigger backend backoff.
+- Rapid transitions use sliding local stability tracking, periodic deep checks, and a rate-limited animated-background fallback.
 
 ## Build
 
@@ -32,4 +34,4 @@ GitHub Actions workflow:
 
 Artifact:
 
-`SakuraMate8Lite-Android7-v0.3.6.apk`
+`SakuraMate8Lite-Android7-v0.3.7.apk`
