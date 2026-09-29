@@ -274,6 +274,9 @@ public class SakuraOverlayService extends Service {
                     lastAutoSignature = null;
                 }
                 updateAutoButtonAppearance();
+                if (autoTranslateEnabled && !busy && selectionView == null && projection != null) {
+                    requestCapture(true, false);
+                }
             }
         });
 
