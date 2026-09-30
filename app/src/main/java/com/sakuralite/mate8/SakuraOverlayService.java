@@ -296,7 +296,9 @@ public class SakuraOverlayService extends Service {
             private float downRawY;
             private int startX;
             private int startY;
+            private int startWidth;
             private boolean moved;
+            private boolean resizing;
 
             @Override
             public boolean onTouch(View v, MotionEvent event) {
@@ -308,6 +310,8 @@ public class SakuraOverlayService extends Service {
                         downRawY = event.getRawY();
                         startX = resultParams.x;
                         startY = resultParams.y;
+                        startWidth = resultParams.width > 0 ? resultParams.width : v.getWidth();
+                        resizing = event.getX() >= Math.max(0, v.getWidth() - dp(36));
                         moved = false;
                         return true;
 
@@ -315,12 +319,20 @@ public class SakuraOverlayService extends Service {
                         int dx = Math.round(event.getRawX() - downRawX);
                         int dy = Math.round(event.getRawY() - downRawY);
                         if (Math.abs(dx) > dp(3) || Math.abs(dy) > dp(3)) moved = true;
-                        moveTranslationBox(startX + dx, startY + dy, false);
+
+                        if (resizing) {
+                            resizeTranslationBox(startWidth + dx, false);
+                        } else {
+                            moveTranslationBox(startX + dx, startY + dy, false);
+                        }
                         return true;
 
                     case MotionEvent.ACTION_UP:
                     case MotionEvent.ACTION_CANCEL:
-                        if (moved) saveTranslationPosition();
+                        if (moved) {
+                            if (resizing) saveTranslationWidth();
+                            else saveTranslationPosition();
+                        }
                         return true;
                 }
                 return false;
@@ -1380,7 +1392,9 @@ public class SakuraOverlayService extends Service {
         resultView.setBackground(roundRect(withAlpha(background, alphaPercent), dp(10)));
         resultView.setSingleLine(singleLine);
         resultView.setHorizontallyScrolling(singleLine);
-        if (!singleLine) resultView.setMaxLines(10);
+        if (!singleLine) {
+            resultView.setMaxLines(20);
+        }
     }
 
     private String processTranslationText(String text) {
@@ -1470,11 +1484,9 @@ public class SakuraOverlayService extends Service {
         String key = orientationPrefix(dm);
 
         int maxWidth = Math.max(dp(180), dm.widthPixels - dp(24));
-        boolean singleLine = prefs.getBoolean("no_wrap", false);
-        int desiredWidth = singleLine
-                ? maxWidth
-                : (isLandscape(dm) ? Math.min(dp(520), maxWidth) : Math.min(dp(360), maxWidth));
-        resultParams.width = desiredWidth;
+        int defaultWidthDp = isLandscape(dm) ? 520 : 360;
+        int configuredWidthDp = prefInt("trans_width_dp", defaultWidthDp, 180, 720);
+        resultParams.width = Math.min(dp(configuredWidthDp), maxWidth);
 
         float defaultX = 0.04f;
         float defaultY = isLandscape(dm) ? 0.08f : 0.62f;
@@ -1504,6 +1516,34 @@ public class SakuraOverlayService extends Service {
         } catch (Exception ignored) {}
 
         if (save) saveTranslationPosition();
+    }
+
+    private void resizeTranslationBox(int width, boolean save) {
+        if (wm == null || resultView == null || resultParams == null) return;
+
+        DisplayMetrics dm = currentMetrics();
+        int minWidth = dp(180);
+        int maxWidth = Math.max(minWidth, dm.widthPixels - dp(24));
+        resultParams.width = clamp(width, minWidth, maxWidth);
+
+        int maxX = Math.max(0, dm.widthPixels - resultParams.width);
+        resultParams.x = clamp(resultParams.x, 0, maxX);
+
+        try {
+            wm.updateViewLayout(resultView, resultParams);
+        } catch (Exception ignored) {}
+
+        if (save) saveTranslationWidth();
+    }
+
+    private void saveTranslationWidth() {
+        if (resultParams == null) return;
+        float density = getResources().getDisplayMetrics().density;
+        int widthDp = density > 0f
+                ? Math.round(resultParams.width / density)
+                : resultParams.width;
+        widthDp = clamp(widthDp, 180, 720);
+        prefs.edit().putString("trans_width_dp", String.valueOf(widthDp)).apply();
     }
 
     private void saveTranslationPosition() {
