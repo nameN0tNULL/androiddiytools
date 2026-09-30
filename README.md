@@ -1,15 +1,16 @@
 # androiddiytools — Sakura Mate8 Lite
 
-Current app version: **0.3.7**
+Current app version: **0.3.8**
 
 This repository builds the Android 7 compatible Sakura Mate8 Lite floating translator client.
 
-## v0.3.7
+## v0.3.8
 
 - Huawei Mate 8 / Android 7 compatible.
 - No Google Play Services or AndroidX dependency.
 - Portrait/landscape independent OCR crop regions.
 - Draggable translation overlay with configurable font/background style.
+- Adjustable translation box width from settings or by dragging the overlay right edge; multiline text wraps automatically at the selected width.
 - Visual RGB color pickers for font and background colors with live preview and HEX output.
 - Manual translate / crop / force-retranslate floating controls.
 - Landscape-safe floating control layout.
@@ -34,4 +35,4 @@ GitHub Actions workflow:
 
 Artifact:
 
-`SakuraMate8Lite-Android7-v0.3.7.apk`
+`SakuraMate8Lite-Android7-v0.3.8.apk`
