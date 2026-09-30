@@ -285,7 +285,7 @@ public class MainActivity extends Activity {
         root.addView(status);
 
         root.addView(text(
-                "启动悬浮翻译后，点“自”开启/关闭自动翻译。开启后每 2 秒先在手机本地做低功耗 dHash 检测；疑似变化时才做 32×12 灰度差分，并在约 250ms 后确认稳定。静止画面不会上传。",
+                "启动悬浮翻译后，点“自”开启/关闭自动翻译。译文框可在设置页调整宽度，也可拖动译文框右侧边缘实时改宽；多行模式下超过宽度会自动换行。自动翻译会先在手机本地做低功耗变化检测，静止画面不会上传。",
                 13, Color.GRAY));
 
         setContentView(scroll);
