@@ -38,6 +38,9 @@ public class MainActivity extends Activity {
     private EditText textColor;
     private EditText bgColor;
     private EditText bgAlpha;
+    private SeekBar boxWidth;
+    private TextView boxWidthValue;
+    private int boxWidthDp;
     private CheckBox contextEnabled;
     private CheckBox showOcr;
     private CheckBox noWrap;
@@ -195,6 +198,26 @@ public class MainActivity extends Activity {
         bgAlpha.setText(prefs.getString("bg_alpha", "90"));
         root.addView(bgAlpha, full());
 
+        root.addView(label("翻译框宽度（180 - 720dp；实际宽度会自动限制在屏幕内）"));
+        boxWidthDp = parseBoxWidth(prefs.getString("trans_width_dp", "360"));
+        boxWidthValue = text("当前宽度：" + boxWidthDp + "dp", 14, Color.DKGRAY);
+        root.addView(boxWidthValue, full());
+
+        boxWidth = new SeekBar(this);
+        boxWidth.setMax(540);
+        boxWidth.setProgress(boxWidthDp - 180);
+        boxWidth.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                boxWidthDp = 180 + progress;
+                if (boxWidthValue != null) boxWidthValue.setText("当前宽度：" + boxWidthDp + "dp");
+                applyPreview();
+            }
+
+            @Override public void onStartTrackingTouch(SeekBar seekBar) {}
+            @Override public void onStopTrackingTouch(SeekBar seekBar) {}
+        });
+        root.addView(boxWidth, full());
+
         noWrap = new CheckBox(this);
         noWrap.setText("内容单行显示，不换行");
         noWrap.setChecked(prefs.getBoolean("no_wrap", false));
@@ -344,6 +367,7 @@ public class MainActivity extends Activity {
         String tc = normalizeColor(textColor.getText().toString(), "#FFFFFF");
         String bc = normalizeColor(bgColor.getText().toString(), "#222222");
         int alpha = parseAlpha(bgAlpha.getText().toString());
+        int widthDp = parseBoxWidth(String.valueOf(boxWidthDp));
         String g = normalizedId(gameId.getText().toString(), "default");
         String scene = normalizedId(sceneId.getText().toString(), "default");
 
@@ -353,6 +377,8 @@ public class MainActivity extends Activity {
         textColor.setText(tc);
         bgColor.setText(bc);
         bgAlpha.setText(String.valueOf(alpha));
+        boxWidthDp = widthDp;
+        if (boxWidthValue != null) boxWidthValue.setText("当前宽度：" + boxWidthDp + "dp");
         gameId.setText(g);
         sceneId.setText(scene);
 
@@ -369,6 +395,7 @@ public class MainActivity extends Activity {
                 .putString("text_color", tc)
                 .putString("bg_color", bc)
                 .putString("bg_alpha", String.valueOf(alpha))
+                .putString("trans_width_dp", String.valueOf(widthDp))
                 .putBoolean("no_wrap", noWrap.isChecked())
                 .putBoolean("chinese_only", chineseOnly.isChecked())
                 .apply();
@@ -536,8 +563,17 @@ public class MainActivity extends Activity {
         d.setColor(withAlpha(bg, alpha));
         d.setCornerRadius(dp(10));
         preview.setBackground(d);
-        preview.setSingleLine(noWrap != null && noWrap.isChecked());
-        preview.setHorizontallyScrolling(noWrap != null && noWrap.isChecked());
+
+        boolean singleLine = noWrap != null && noWrap.isChecked();
+        preview.setSingleLine(singleLine);
+        preview.setHorizontallyScrolling(singleLine);
+        if (!singleLine) preview.setMaxLines(20);
+
+        if (preview.getLayoutParams() != null) {
+            int maxPx = Math.max(dp(180), getResources().getDisplayMetrics().widthPixels - dp(36));
+            preview.getLayoutParams().width = Math.min(dp(parseBoxWidth(String.valueOf(boxWidthDp))), maxPx);
+            preview.requestLayout();
+        }
     }
 
     private void startFlow() {
@@ -616,6 +652,15 @@ public class MainActivity extends Activity {
             return v;
         } catch (Exception e) {
             return 16f;
+        }
+    }
+
+    private int parseBoxWidth(String s) {
+        try {
+            int v = Integer.parseInt(s.trim());
+            return Math.max(180, Math.min(720, v));
+        } catch (Exception e) {
+            return 360;
         }
     }
 
