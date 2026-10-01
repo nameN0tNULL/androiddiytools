@@ -1,4 +1,4 @@
-name: Cache Whisper Small Model
+name: Cache Local JA-ZH Translator
 
 on:
   push:
@@ -13,20 +13,45 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - name: Download official Whisper small Q5 model
+      - name: Download translator model and Transformers wheel
         run: |
           set -euxo pipefail
-          curl -L --fail --retry 5 --retry-delay 3 \
-            -o ggml-small-q5_1.bin \
-            https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_1.bin
-          sha256sum ggml-small-q5_1.bin | tee SHA256SUMS.txt
+          python -m pip install --upgrade pip
+          python -m pip install huggingface_hub
+          mkdir -p translator_model wheelhouse
+          python - <<'PY'
+          from huggingface_hub import snapshot_download
+          snapshot_download(
+              repo_id="lemmonyjiang/opus-mt-ja-zh-jav",
+              local_dir="translator_model",
+              allow_patterns=[
+                  "config.json",
+                  "generation_config.json",
+                  "model.safetensors",
+                  "source.spm",
+                  "target.spm",
+                  "special_tokens_map.json",
+                  "tokenizer_config.json",
+                  "vocab.json",
+              ],
+          )
+          PY
+          python -m pip download --no-deps "transformers==4.57.1" -d wheelhouse
+          du -sh translator_model wheelhouse
+          sha256sum translator_model/model.safetensors > translator_model/SHA256SUMS.txt
 
-      - name: Upload model
+      - name: Upload translator model
         uses: actions/upload-artifact@v4
         with:
-          name: whisper-small-q5
-          path: |
-            ggml-small-q5_1.bin
-            SHA256SUMS.txt
+          name: ja-zh-translator-model
+          path: translator_model
+          compression-level: 0
+          retention-days: 1
+
+      - name: Upload Transformers wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: transformers-wheel
+          path: wheelhouse
           compression-level: 0
           retention-days: 1
