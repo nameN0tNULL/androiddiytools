@@ -9,7 +9,7 @@ allprojects { repositories { google(); mavenCentral() } }
 apply plugin: 'com.android.application'
 
 android {
-    compileSdkVersion 35
+    compileSdkVersion 29
     defaultConfig {
         applicationId "com.khronos.player"
         minSdkVersion 26
