@@ -34,7 +34,9 @@ android {
         main {
             java.srcDirs = ['app/java']
             jni.srcDirs = ['app']
-            jniLibs.srcDirs = ['openxr_loader', 'native-libs']
+            // FFmpeg shared objects are CMake IMPORTED targets and are packaged
+            // through externalNativeBuild; listing native-libs here duplicates them.
+            jniLibs.srcDirs = ['openxr_loader']
             manifest.srcFile 'app/AndroidManifest.xml'
         }
     }
