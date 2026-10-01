@@ -20,11 +20,20 @@ jobs:
             -o ggml-large-v3-turbo-q5_0.bin \
             https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin
           echo "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2  ggml-large-v3-turbo-q5_0.bin" | sha256sum -c -
+          split -b 300M -d -a 2 ggml-large-v3-turbo-q5_0.bin model.part.
 
-      - name: Upload model artifact
+      - name: Upload model part 00
         uses: actions/upload-artifact@v4
         with:
-          name: whisper-large-v3-turbo-q5
-          path: ggml-large-v3-turbo-q5_0.bin
+          name: whisper-model-part-00
+          path: model.part.00
+          compression-level: 0
+          retention-days: 1
+
+      - name: Upload model part 01
+        uses: actions/upload-artifact@v4
+        with:
+          name: whisper-model-part-01
+          path: model.part.01
           compression-level: 0
           retention-days: 1
