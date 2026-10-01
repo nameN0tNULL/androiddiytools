@@ -1,0 +1,101 @@
+name: Build PICO Neo3 AV1 VR Player
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/pico-neo3-av1-vr-player
+    paths:
+      - 'vrplayer/**'
+      - '.github/workflows/build-pico-av1-vr.yml'
+
+concurrency:
+  group: pico-av1-vr-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout androiddiytools
+        uses: actions/checkout@v4
+
+      - name: Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Host build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf automake build-essential cmake git libtool meson ninja-build pkg-config python3 python3-pip nasm yasm unzip zip
+
+      - name: Checkout pinned mpv-android source
+        shell: bash
+        run: |
+          mkdir -p _work
+          git clone https://github.com/mpv-android/mpv-android.git _work/mpv-android
+          cd _work/mpv-android
+          git checkout 687c7fd586d826fd0387809e14bec7a2b4fc45a1
+
+      - name: Restore mpv/FFmpeg arm64 prefix
+        id: cache-mpv
+        uses: actions/cache/restore@v4
+        with:
+          path: _work/mpv-android/buildscripts/prefix/arm64
+          key: mpv-ffmpeg-arm64-687c7fd586d826fd0387809e14bec7a2b4fc45a1-v3
+
+      - name: Build FFmpeg + dav1d for arm64
+        if: steps.cache-mpv.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          cd _work/mpv-android/buildscripts
+          ./download.sh
+          ./buildall.sh --arch arm64 ffmpeg
+
+      - name: Save mpv/FFmpeg arm64 prefix
+        if: steps.cache-mpv.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: _work/mpv-android/buildscripts/prefix/arm64
+          key: ${{ steps.cache-mpv.outputs.cache-primary-key }}
+
+      - name: Prepare PICO OpenXR project
+        shell: bash
+        run: |
+          git clone https://github.com/picoxr/OpenXR_VideoPlayer_Demo.git _work/pico
+          cd _work/pico
+          git checkout 8831f7a5e1dc76c2765d784bc21ccef27c7980a6
+          cd "$GITHUB_WORKSPACE"
+          bash vrplayer/build.sh prepare
+
+      - name: Build APK
+        shell: bash
+        run: |
+          cd _work/pico/OpenXR/Sample/VideoPlayer
+          chmod +x ./gradlew
+          ./gradlew --no-daemon assembleDebug --stacktrace
+
+      - name: Collect artifact
+        shell: bash
+        run: |
+          mkdir -p dist
+          APK="$(find _work/pico/OpenXR/Sample/VideoPlayer -path '*/build/outputs/apk/debug/*.apk' | head -n 1)"
+          test -n "$APK"
+          cp "$APK" dist/PicoNeo3-AV1-VR-debug.apk
+          sha256sum dist/PicoNeo3-AV1-VR-debug.apk | tee dist/SHA256SUMS.txt
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: PicoNeo3-AV1-VR-debug
+          path: |
+            dist/PicoNeo3-AV1-VR-debug.apk
+            dist/SHA256SUMS.txt
+          retention-days: 30
+          if-no-files-found: error

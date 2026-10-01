@@ -1,0 +1,59 @@
+def OBOE_SDK_ROOT = file("${buildDir}/Oboe")
+
+buildscript {
+    repositories { google(); mavenCentral(); gradlePluginPortal() }
+    dependencies { classpath 'com.android.tools.build:gradle:7.2.2' }
+}
+allprojects { repositories { google(); mavenCentral() } }
+
+apply plugin: 'com.android.application'
+
+android {
+    compileSdkVersion 29
+    defaultConfig {
+        applicationId "com.khronos.player"
+        minSdkVersion 26
+        targetSdkVersion 29
+        versionCode 2
+        versionName "0.2.0"
+        externalNativeBuild {
+            cmake {
+                abiFilters "arm64-v8a"
+                arguments '-DANDROID_TOOLCHAIN=clang', '-DANDROID_STL=c++_shared'
+            }
+        }
+    }
+    buildTypes {
+        debug { debuggable true; minifyEnabled false }
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    sourceSets {
+        main {
+            java.srcDirs = ['app/java']
+            jni.srcDirs = ['app']
+            // FFmpeg shared objects are CMake IMPORTED targets and are packaged
+            // through externalNativeBuild; listing native-libs here duplicates them.
+            jniLibs.srcDirs = ['openxr_loader']
+            manifest.srcFile 'app/AndroidManifest.xml'
+        }
+    }
+    externalNativeBuild {
+        cmake { path "CMakeLists.txt"; version "3.28.3" }
+    }
+}
+
+dependencies {
+    implementation fileTree(dir: 'openxr_loader', include: ['*.jar', '*.aar'])
+    implementation 'eu.agno3.jcifs:jcifs-ng:2.1.10'
+    implementation 'org.slf4j:slf4j-nop:1.7.36'
+}
+
+task extractOboeSDK(type: Copy) {
+    def sourceFile = file("${projectDir}/libs/oboe-1.6.0.aar")
+    from zipTree(sourceFile)
+    into OBOE_SDK_ROOT
+}
+preBuild.dependsOn(extractOboeSDK)
