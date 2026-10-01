@@ -119,7 +119,7 @@ public class SmbBridgeService extends Service {
         Properties props = new Properties();
         props.setProperty("jcifs.smb.client.enableSMB2", "true");
         props.setProperty("jcifs.smb.client.disableSMB1", "false");
-        props.setProperty("jcifs.resolveOrder", "DNS,RESOLVER,BCAST");
+        props.setProperty("jcifs.resolveOrder", "DNS,BCAST");
         return new BaseContext(new PropertyConfiguration(props));
     }
 
