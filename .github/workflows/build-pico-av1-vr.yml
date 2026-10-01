@@ -43,12 +43,12 @@ jobs:
           cd _work/mpv-android
           git checkout 687c7fd586d826fd0387809e14bec7a2b4fc45a1
 
-      - name: Cache mpv/FFmpeg arm64 prefix
+      - name: Restore mpv/FFmpeg arm64 prefix
         id: cache-mpv
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: _work/mpv-android/buildscripts/prefix/arm64
-          key: mpv-ffmpeg-arm64-687c7fd586d826fd0387809e14bec7a2b4fc45a1-v2
+          key: mpv-ffmpeg-arm64-687c7fd586d826fd0387809e14bec7a2b4fc45a1-v3
 
       - name: Build FFmpeg + dav1d for arm64
         if: steps.cache-mpv.outputs.cache-hit != 'true'
@@ -57,6 +57,13 @@ jobs:
           cd _work/mpv-android/buildscripts
           ./download.sh
           ./buildall.sh --arch arm64 ffmpeg
+
+      - name: Save mpv/FFmpeg arm64 prefix
+        if: steps.cache-mpv.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: _work/mpv-android/buildscripts/prefix/arm64
+          key: ${{ steps.cache-mpv.outputs.cache-primary-key }}
 
       - name: Prepare PICO OpenXR project
         shell: bash
