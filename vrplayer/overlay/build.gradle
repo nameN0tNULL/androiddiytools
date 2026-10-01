@@ -1,0 +1,57 @@
+def OBOE_SDK_ROOT = file("${buildDir}/Oboe")
+
+buildscript {
+    repositories { google(); mavenCentral(); gradlePluginPortal() }
+    dependencies { classpath 'com.android.tools.build:gradle:7.2.2' }
+}
+allprojects { repositories { google(); mavenCentral() } }
+
+apply plugin: 'com.android.application'
+
+android {
+    compileSdkVersion 35
+    defaultConfig {
+        applicationId "com.khronos.player"
+        minSdkVersion 26
+        targetSdkVersion 29
+        versionCode 1
+        versionName "0.1.0"
+        externalNativeBuild {
+            cmake {
+                abiFilters "arm64-v8a"
+                arguments '-DANDROID_TOOLCHAIN=clang', '-DANDROID_STL=c++_shared'
+            }
+        }
+    }
+    buildTypes {
+        debug { debuggable true; minifyEnabled false }
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    sourceSets {
+        main {
+            java.srcDirs = ['app/java']
+            jni.srcDirs = ['app']
+            jniLibs.srcDirs = ['openxr_loader', 'native-libs']
+            manifest.srcFile 'app/AndroidManifest.xml'
+        }
+    }
+    externalNativeBuild {
+        cmake { path "CMakeLists.txt"; version "3.22.1" }
+    }
+}
+
+dependencies {
+    implementation fileTree(dir: 'openxr_loader', include: ['*.jar', '*.aar'])
+    implementation 'eu.agno3.jcifs:jcifs-ng:2.1.10'
+    implementation 'org.slf4j:slf4j-nop:1.7.36'
+}
+
+task extractOboeSDK(type: Copy) {
+    def sourceFile = file("${projectDir}/libs/oboe-1.6.0.aar")
+    from zipTree(sourceFile)
+    into OBOE_SDK_ROOT
+}
+preBuild.dependsOn(extractOboeSDK)
