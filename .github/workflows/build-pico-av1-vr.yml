@@ -9,6 +9,10 @@ on:
       - 'vrplayer/**'
       - '.github/workflows/build-pico-av1-vr.yml'
 
+concurrency:
+  group: pico-av1-vr-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -31,6 +35,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y autoconf automake build-essential cmake git libtool meson ninja-build pkg-config python3 python3-pip nasm yasm unzip zip
 
+      - name: Checkout pinned mpv-android source
+        shell: bash
+        run: |
+          mkdir -p _work
+          git clone https://github.com/mpv-android/mpv-android.git _work/mpv-android
+          cd _work/mpv-android
+          git checkout 687c7fd586d826fd0387809e14bec7a2b4fc45a1
+
       - name: Cache mpv/FFmpeg arm64 prefix
         id: cache-mpv
         uses: actions/cache@v4
@@ -42,28 +54,13 @@ jobs:
         if: steps.cache-mpv.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          mkdir -p _work
-          git clone https://github.com/mpv-android/mpv-android.git _work/mpv-android
-          cd _work/mpv-android
-          git checkout 687c7fd586d826fd0387809e14bec7a2b4fc45a1
-          cd buildscripts
+          cd _work/mpv-android/buildscripts
           ./download.sh
           ./buildall.sh --arch arm64 ffmpeg
-
-      - name: Restore mpv source when prefix came from cache
-        if: steps.cache-mpv.outputs.cache-hit == 'true'
-        shell: bash
-        run: |
-          if [ ! -d _work/mpv-android ]; then
-            git clone https://github.com/mpv-android/mpv-android.git _work/mpv-android
-            cd _work/mpv-android
-            git checkout 687c7fd586d826fd0387809e14bec7a2b4fc45a1
-          fi
 
       - name: Prepare PICO OpenXR project
         shell: bash
         run: |
-          mkdir -p _work
           git clone https://github.com/picoxr/OpenXR_VideoPlayer_Demo.git _work/pico
           cd _work/pico
           git checkout 8831f7a5e1dc76c2765d784bc21ccef27c7980a6
