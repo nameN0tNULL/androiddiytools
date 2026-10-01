@@ -1,4 +1,4 @@
-name: Cache Local JA-ZH Translator
+name: Cache Translator Python Deps
 
 on:
   push:
@@ -9,49 +9,20 @@ on:
   workflow_dispatch:
 
 jobs:
-  fetch-model:
+  fetch-deps:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
     steps:
-      - name: Download translator model and Transformers wheel
+      - name: Download compatible wheels
         run: |
           set -euxo pipefail
-          python -m pip install --upgrade pip
-          python -m pip install huggingface_hub
-          mkdir -p translator_model wheelhouse
-          python - <<'PY'
-          from huggingface_hub import snapshot_download
-          snapshot_download(
-              repo_id="lemmonyjiang/opus-mt-ja-zh-jav",
-              local_dir="translator_model",
-              allow_patterns=[
-                  "config.json",
-                  "generation_config.json",
-                  "model.safetensors",
-                  "source.spm",
-                  "target.spm",
-                  "special_tokens_map.json",
-                  "tokenizer_config.json",
-                  "vocab.json",
-              ],
-          )
-          PY
-          python -m pip download --no-deps "transformers==4.57.1" -d wheelhouse
-          du -sh translator_model wheelhouse
-          sha256sum translator_model/model.safetensors > translator_model/SHA256SUMS.txt
-
-      - name: Upload translator model
+          mkdir -p wheelhouse
+          python -m pip download --no-deps "huggingface_hub==0.36.0" -d wheelhouse
+          python -m pip download --no-deps "tokenizers==0.22.1" -d wheelhouse
+          ls -lh wheelhouse
+      - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
-          name: ja-zh-translator-model
-          path: translator_model
-          compression-level: 0
-          retention-days: 1
-
-      - name: Upload Transformers wheel
-        uses: actions/upload-artifact@v4
-        with:
-          name: transformers-wheel
+          name: translator-python-deps
           path: wheelhouse
           compression-level: 0
           retention-days: 1
