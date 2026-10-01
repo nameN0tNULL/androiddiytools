@@ -3,13 +3,40 @@
     <uses-feature android:glEsVersion="0x00030002" android:required="true" />
     <uses-feature android:name="android.hardware.vr.headtracking" android:required="true" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+
     <application android:allowBackup="false" android:label="Neo3 AV1 VR" android:usesCleartextTraffic="true">
-        <activity android:name="com.khronos.player.BrowserActivity" android:exported="true" android:screenOrientation="landscape">
+        <activity
+            android:name="com.khronos.player.BrowserActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:screenOrientation="landscape">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- Lets Android/PICO file browsers offer this app for ordinary video URIs. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="video/*" />
+                <data android:mimeType="application/x-matroska" />
+                <data android:mimeType="application/octet-stream" />
+            </intent-filter>
+
+            <!-- Fallback for file managers which send file:// without a MIME type. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="file" android:pathPattern=".*\\.mp4" />
+                <data android:scheme="file" android:pathPattern=".*\\.m4v" />
+                <data android:scheme="file" android:pathPattern=".*\\.mov" />
+                <data android:scheme="file" android:pathPattern=".*\\.mkv" />
+                <data android:scheme="file" android:pathPattern=".*\\.webm" />
+            </intent-filter>
         </activity>
+
         <activity
             android:name="com.khronos.player.MainActivity"
             android:exported="false"
@@ -20,6 +47,7 @@
             android:configChanges="screenSize|screenLayout|orientation|keyboardHidden|keyboard|navigation|uiMode|density">
             <meta-data android:name="android.app.lib_name" android:value="player" />
         </activity>
+
         <service android:name="com.khronos.player.SmbBridgeService" android:exported="false" />
         <meta-data android:name="pvr.app.type" android:value="vr" />
     </application>
