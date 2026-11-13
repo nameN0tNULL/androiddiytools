@@ -66,9 +66,13 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          corepack enable
-          corepack prepare pnpm@11.11.0 --activate
+          # Brave v1.97.37 declares devEngines.packageManager.version as
+          # ">=11.11.0". Corepack treats that range as an invalid package
+          # manager locator, so use an exact globally installed pnpm instead.
+          corepack disable || true
+          npm install --global pnpm@11.11.0
           node --version
+          which pnpm
           pnpm --version
 
       - name: Checkout pinned Brave core
