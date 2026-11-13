@@ -99,18 +99,17 @@ jobs:
           sudo apt-get clean
           df -h
 
-      - name: Verify Chromium version
+      - name: Verify Chromium checkout
         shell: bash
         run: |
           set -euxo pipefail
-          cat work/src/chrome/VERSION
-          grep -q '^MAJOR=153$' work/src/chrome/VERSION
-          grep -q '^MINOR=0$' work/src/chrome/VERSION
-          grep -q '^BUILD=8010$' work/src/chrome/VERSION
-          grep -q '^PATCH=37$' work/src/chrome/VERSION
+          # Brave rewrites chrome/VERSION for its Android product version, so
+          # verify the actual Chromium checkout by Git tag instead.
           grep -n '"tag": "153.0.8010.37"' work/src/brave/package.json
           git -C work/src rev-parse HEAD
-          echo "Pinned Chromium: $CHROMIUM_VERSION"
+          git -C work/src tag --points-at HEAD | tee /tmp/chromium-tags.txt
+          grep -Fxq '153.0.8010.37' /tmp/chromium-tags.txt
+          echo "Pinned Chromium checkout verified: $CHROMIUM_VERSION"
 
       - name: Apply pinned Cromite browser proxy page
         shell: bash
