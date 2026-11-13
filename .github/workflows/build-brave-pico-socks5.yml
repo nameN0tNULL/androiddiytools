@@ -1,0 +1,173 @@
+name: Build Brave PICO Neo3 SOCKS5
+
+on:
+  push:
+    branches:
+      - brave-pico-socks5
+    paths:
+      - '.github/workflows/build-brave-pico-socks5.yml'
+      - 'brave-pico/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: brave-pico-socks5
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 355
+    env:
+      BRAVE_CORE_SHA: 973c5c8667ce80d2d3c227ef6e60df530eb26d35
+      BRAVE_VERSION: 1.97.37
+      CHROMIUM_VERSION: 153.0.8010.37
+      CROMITE_SHA: 3724efc6ede3d2d94611c1fe71d1b090ebbb40a7
+      SISO_LIMITS: local=2,step=2
+
+    steps:
+      - name: Checkout build recipe
+        uses: actions/checkout@v4
+
+      - name: Free runner disk space
+        shell: bash
+        run: |
+          set -euxo pipefail
+          df -h
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf /usr/local/lib/android
+          sudo apt-get clean
+          df -h
+
+      - name: Add swap
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo swapoff /swapfile-pico 2>/dev/null || true
+          sudo rm -f /swapfile-pico
+          sudo fallocate -l 8G /swapfile-pico
+          sudo chmod 600 /swapfile-pico
+          sudo mkswap /swapfile-pico
+          sudo swapon /swapfile-pico
+          free -h
+          df -h
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.16.0'
+
+      - name: Set up pnpm
+        shell: bash
+        run: |
+          set -euxo pipefail
+          corepack enable
+          corepack prepare pnpm@11.11.0 --activate
+          node --version
+          pnpm --version
+
+      - name: Checkout pinned Brave core
+        uses: actions/checkout@v4
+        with:
+          repository: brave/brave-core
+          ref: 973c5c8667ce80d2d3c227ef6e60df530eb26d35
+          path: work/src/brave
+          fetch-depth: 1
+
+      - name: Initialize Brave Android source
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd work/src/brave
+          pnpm install --frozen-lockfile
+          pnpm run init --target_os=android --target_arch=arm64 --no-history 2>&1 | tee "$GITHUB_WORKSPACE/brave-init.log"
+
+      - name: Install Chromium Android host dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo work/src/build/install-build-deps.sh --android --no-prompt
+          sudo apt-get clean
+          df -h
+
+      - name: Verify Chromium version
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ACTUAL="$(work/src/chrome/VERSION | true)"
+          grep -n '"tag": "153.0.8010.37"' work/src/brave/package.json
+          git -C work/src rev-parse HEAD
+          echo "Pinned Chromium: $CHROMIUM_VERSION"
+
+      - name: Apply pinned Cromite browser proxy page
+        shell: bash
+        run: |
+          set -euxo pipefail
+          PATCH_URL="https://raw.githubusercontent.com/uazo/cromite/$CROMITE_SHA/build/patches/Add-a-proxy-configuration-page.patch"
+          curl -fL --retry 5 --retry-delay 5 "$PATCH_URL" -o /tmp/cromite-proxy.patch
+          cd work/src
+          git apply --check /tmp/cromite-proxy.patch 2>&1 | tee "$GITHUB_WORKSPACE/proxy-patch-check.log"
+          git apply --whitespace=nowarn /tmp/cromite-proxy.patch
+          git diff --check
+          git diff --stat | tee "$GITHUB_WORKSPACE/proxy-patch-stat.txt"
+
+      - name: Build optimized ARM64 APK
+        shell: bash
+        run: |
+          set -o pipefail
+          cd work/src/brave
+          pnpm run build Static \
+            --target_os=android \
+            --target_arch=arm64 \
+            --target_android_output_format=apk \
+            --gn=symbol_level:0 \
+            --gn=debuggable_apks:false \
+            2>&1 | tee "$GITHUB_WORKSPACE/brave-build.log"
+
+      - name: Collect APK
+        if: success()
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p artifacts
+          mapfile -t APKS < <(find work/src/out -type f -path '*/apks/*.apk' | sort)
+          printf '%s\n' "${APKS[@]}"
+          test "${#APKS[@]}" -gt 0
+          for apk in "${APKS[@]}"; do
+            cp "$apk" "artifacts/$(basename "$apk")"
+          done
+          (
+            cd artifacts
+            sha256sum *.apk | tee SHA256SUMS.txt
+          )
+          ls -lh artifacts
+
+      - name: Upload APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Brave-PICO-Neo3-SOCKS5-arm64
+          path: |
+            artifacts/*.apk
+            artifacts/SHA256SUMS.txt
+            proxy-patch-stat.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Brave-PICO-build-diagnostics
+          path: |
+            brave-init.log
+            proxy-patch-check.log
+            proxy-patch-stat.txt
+            brave-build.log
+          if-no-files-found: ignore
+          retention-days: 14
